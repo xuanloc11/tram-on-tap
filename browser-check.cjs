@@ -1,0 +1,102 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { pathToFileURL } = require('node:url');
+const { chromium } = require('C:/Program Files/WindowsApps/OpenAI.CodexPrimaryRuntime.v26-1105-1297-0_26.1105.1297.0_x64__3k8sg7r9htsxt/dependencies/node/node_modules/playwright');
+(async () => {
+  fs.mkdirSync('output/playwright', { recursive: true });
+  const browser = await chromium.launch({ headless: true, executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe' });
+  try {
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1050 } });
+    const page = await context.newPage();
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.clock.install();
+    await page.goto(pathToFileURL(path.resolve('dist/index.html')).href);
+    await page.locator('h1').waitFor();
+    for (const width of [320,390,768,1024,1440]) {
+      await page.setViewportSize({ width, height: 1050 });
+      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `Home overflows at ${width}px`);
+    }
+    await page.screenshot({ path: 'output/playwright/home-desktop.png', fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: 'output/playwright/home-mobile.png', fullPage: true });
+    await page.locator('[data-action="random"]').first().click();
+    await page.locator('#question-title').waitFor();
+    assert.equal(await page.locator('.q-dot').count(), 30);
+    await page.locator('label.answer').first().click();
+    await page.locator('[data-action="flag"]').click();
+    await page.locator('[data-action="next"]').click();
+    await page.reload();
+    await page.locator('#question-title').waitFor();
+    assert((await page.locator('.question-counter').innerText()).includes('02'));
+    assert.equal(await page.locator('.q-dot.answered').count(), 1);
+    assert.equal(await page.locator('.q-dot.has-flag').count(), 1);
+    await page.locator('[data-action="jump"][data-index="0"]').click();
+    assert.equal(await page.locator('input:checked').count(), 1);
+    await page.locator('[data-action="submit"]').first().click();
+    assert((await page.locator('#dialog-copy').innerText()).includes('29'));
+    await page.getByRole('button', { name: 'Làm tiếp', exact: true }).click();
+    assert.equal(await page.locator('dialog[open]').count(), 0);
+    assert.equal(await page.locator('#question-title').count(), 1);
+    await page.locator('.skip').focus();
+    await page.keyboard.press('Enter');
+    assert(page.url().endsWith('#exam'));
+    for (const width of [320,390,768,1024,1440]) {
+      await page.setViewportSize({ width, height: 1050 });
+      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `Exam overflows at ${width}px`);
+    }
+    await page.screenshot({ path: 'output/playwright/exam-desktop.png', fullPage: true });
+    for (let i = 0; i < 30; i++) {
+      if (i) await page.locator(`[data-action="jump"][data-index="${i}"]`).click();
+      const question = await page.locator('#question-title').innerText();
+      const correct = await page.evaluate(question => [...QUESTION_PART_12,...QUESTION_PART_3,...QUESTION_PART_45].find(q => q.question === question).answer, question);
+      await page.locator(`label.answer:has(input[value="${correct}"])`).click();
+    }
+    await page.locator('[data-action="submit"]').first().click();
+    await page.locator('dialog button[value="submit"]').click();
+    await page.locator('.score-circle').waitFor();
+    assert.equal(await page.locator('.score-circle strong').innerText(), '10.0');
+    await page.screenshot({ path: 'output/playwright/results-desktop.png', fullPage: true });
+    await page.locator('[data-action="filter"][data-filter="wrong"]').click();
+    assert.equal(await page.locator('.review-card').count(), 0);
+    await page.locator('a[href="#chapters"]').first().click();
+    await page.locator('[data-action="practice"]').first().click();
+    await page.locator('#question-title').waitFor();
+    assert.equal(await page.locator('.q-dot').count(), 12);
+    await page.locator('label.answer').first().click();
+    assert.equal(await page.locator('.explanation').count(), 1);
+    assert.equal(await page.locator('fieldset[disabled]').count(), 1);
+    await page.locator('a[href="#exams"]').first().click();
+    await page.locator('[data-action="preset"][data-number="1"]').click();
+    await page.locator('dialog button[value="submit"]').click();
+    await page.locator('#question-title').waitFor();
+    await page.locator('[data-action="submit"]').first().click();
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('#question-title').count(), 1, 'Escape after a prior submit must cancel');
+    await page.locator('[data-action="submit"]').first().click();
+    await page.clock.fastForward(45 * 60 * 1000 + 1000);
+    await page.locator('.score-circle').waitFor();
+    assert.equal(await page.locator('dialog[open]').count(), 0, 'Timeout must close dialog');
+    assert.equal(await page.locator('.score-circle strong').innerText(), '0.0');
+    assert((await page.locator('.page-sub').innerText()).includes('Tự động nộp'));
+    await page.reload();
+    assert.equal(await page.locator('.score-circle strong').innerText(), '0.0');
+    await page.locator('a[href="#history"]').first().click();
+    assert.equal(await page.locator('.history-row').count(), 2);
+    await page.locator('[data-action="review"]').last().click();
+    assert.equal(await page.locator('.score-circle strong').innerText(), '10.0');
+    await page.reload();
+    assert.equal(await page.locator('.score-circle strong').innerText(), '10.0', 'Reload preserves the selected historical attempt');
+    await page.locator('a[href="#sources"]').first().click();
+    assert.equal(await page.locator('.sources-list article').count(), 5);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.locator('a[href="#exams"]').first().click();
+    assert.equal(await page.locator('.exam-card').count(), 12);
+    await page.locator('[data-action="preset"][data-number="2"]').click();
+    await page.locator('#question-title').waitFor();
+    await page.screenshot({ path: 'output/playwright/exam-mobile.png', fullPage: true });
+    assert.deepEqual(errors, [], 'Browser JS errors');
+    console.log('PASS browser: responsive 320/390/768/1024/1440; 30-question flow; shuffled correct answers score 10; flags/resume/reload; manual submit/cancel/Escape; timer auto-submit with dialog; practice feedback; history and review; sources; no JavaScript errors.');
+  } finally { await browser.close(); }
+})().catch(error => { console.error(error); process.exitCode = 1; });

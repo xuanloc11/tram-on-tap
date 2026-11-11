@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#284c3f">
+  <meta name="description" content="Ôn trắc nghiệm Kiểm thử phần mềm bằng tiếng Việt. Thi thử 30 câu trong 45 phút, 6 câu mỗi bài, kèm giải thích và xem lại câu sai.">
+  <title>Trạm ôn tập · Kiểm thử phần mềm</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23284c3f'/%3E%3Cpath d='m17 33 10 10 21-23' fill='none' stroke='%23e1edbf' stroke-width='7'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="questions-1-2.js"></script>
+  <script defer src="questions-3.js"></script>
+  <script defer src="questions-4-5.js"></script>
+  <script defer src="engine.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Đến nội dung chính</a>
+  <div id="app"></div>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <dialog id="confirm-dialog" aria-labelledby="dialog-title">
+    <form method="dialog"><div class="eyebrow">KIỂM TRA LẦN CUỐI</div><h2 id="dialog-title">Nộp bài làm?</h2><p id="dialog-copy"></p><div class="dialog-actions"><button value="cancel" class="btn secondary">Làm tiếp</button><button value="submit" class="btn primary">Nộp bài & xem kết quả</button></div></form>
+  </dialog>
+  <noscript>Bạn cần bật JavaScript trong trình duyệt để làm bài trắc nghiệm.</noscript>
+</body>
+</html>

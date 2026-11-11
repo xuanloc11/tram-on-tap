@@ -1,0 +1,5 @@
+study-sources/
+output/
+*.tar.gz
+*.zip
+node_modules/
