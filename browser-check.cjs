@@ -83,6 +83,7 @@ const { chromium } = require('C:/Program Files/WindowsApps/OpenAI.CodexPrimaryRu
     await page.reload();
     assert.equal(await page.locator('.score-circle strong').innerText(), '0.0');
     await page.locator('a[href="#history"]').first().click();
+    await page.locator('.history-row').first().waitFor();
     assert.equal(await page.locator('.history-row').count(), 2);
     await page.locator('[data-action="review"]').last().click();
     assert.equal(await page.locator('.score-circle strong').innerText(), '10.0');

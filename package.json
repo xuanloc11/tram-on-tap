@@ -1,0 +1,11 @@
+{
+  "name": "tram-on-tap",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Trạm ôn tập nhiều môn với quản lý dữ liệu và tệp trên máy cá nhân",
+  "scripts": {
+    "start": "node server.cjs",
+    "test": "node test.cjs && node library-test.cjs && node server-test.cjs"
+  },
+  "engines": { "node": ">=20" }
+}

@@ -1,0 +1,128 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const http = require('node:http');
+const { createServer, MAX_FILE } = require('./server.cjs');
+require('./dist/questions-1-2.js');
+require('./dist/questions-3.js');
+require('./dist/questions-4-5.js');
+const L = require('./dist/library.js');
+const E = require('./dist/engine.js');
+const bank = [...QUESTION_PART_12, ...QUESTION_PART_3, ...QUESTION_PART_45];
+
+(async () => {
+  await fs.mkdir(path.join(__dirname, 'output'), { recursive: true });
+  const dataDir = await fs.mkdtemp(path.join(__dirname, 'output', 'server-test-'));
+  const dataPath = path.join(dataDir, 'data');
+  const server = createServer({ dataDir: dataPath });
+  try {
+    await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+    const origin = `http://127.0.0.1:${server.address().port}`;
+    let revision = null;
+    const request = async (url, options) => {
+      const response = await fetch(origin + url, options);
+      const type = response.headers.get('content-type') || '';
+      const body = type.includes('application/json') ? await response.json() : await response.text();
+      if (url === '/api/library' && response.status === 200 && Object.hasOwn(body, 'revision')) revision = body.revision;
+      return { response, status: response.status, body };
+    };
+    const jsonOptions = (library, expectedRevision = revision) => ({ method: 'PUT', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify({ library, expectedRevision }) });
+    const rawRequest = (url, headers) => new Promise((resolve, reject) => {
+      const req = http.request(origin + url, { headers }, res => { let body = ''; res.on('data', data => { body += data; }); res.on('end', () => resolve({ status: res.statusCode, body })); });
+      req.on('error', reject); req.end();
+    });
+    const home = await request('/');
+    assert.equal(home.status, 200); assert(home.body.includes('<html lang="vi">'));
+    assert.equal(home.response.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(home.response.headers.get('x-tram-local'), '1');
+    assert(home.response.headers.get('content-security-policy').includes("frame-ancestors 'none'"));
+    assert.equal((await request('/styles.css')).status, 200);
+    assert.equal((await request('/styles.css', { method: 'HEAD' })).body, '');
+    assert.equal((await request('/.git/config')).status, 404);
+    assert.equal((await request('/%2e%2e/.git/config')).status, 404);
+    assert.equal((await request('/%2eopenai/hosting.json')).status, 404);
+    assert.equal((await request('/api/no-such-route')).status, 404);
+    assert.equal((await rawRequest('/api/library', { Host: 'attacker.example' })).status, 403);
+    const initial = await request('/api/library');
+    assert.equal(initial.status, 200); assert.equal(initial.body.library, null);
+    assert.equal(initial.body.revision, null);
+    assert.deepEqual((await request('/api/files')).body.files, []);
+    assert.equal(await fs.stat(dataPath).then(() => true, () => false), false, 'GET does not create data directory');
+
+    const library = L.createDefault(bank, E.CHAPTERS);
+    assert.equal((await request('/api/library', { ...jsonOptions(library), headers: { 'Content-Type': 'application/json', Origin: 'https://attacker.example' } })).status, 403);
+    assert.equal((await request('/api/library', { ...jsonOptions(library), headers: { 'Content-Type': 'application/json', 'Sec-Fetch-Site': 'cross-site' } })).status, 403);
+    assert.equal((await request('/api/library', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: '{bad' })).status, 400);
+    assert.equal((await request('/api/library', jsonOptions({ version: 99 }))).status, 422);
+    assert.equal((await request('/api/library', { method: 'PUT', body: '{}' })).status, 415);
+    assert.equal((await request('/api/library', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ library }) })).status, 422);
+    const firstSave = await request('/api/library', jsonOptions(library));
+    assert.equal(firstSave.status, 200); assert.equal(firstSave.body.saved, true); assert.match(firstSave.body.revision, /^[a-f0-9]{64}$/);
+    assert.deepEqual((await request('/api/library')).body.library, library);
+    const beforeTabs = (await request('/api/library')).body;
+    const fromTabA = L.clone(library), fromTabB = L.clone(library);
+    fromTabA.subjects[0].name = 'Môn sửa từ cửa sổ A'; fromTabB.subjects[0].name = 'Môn sửa từ cửa sổ B';
+    const tabResults = await Promise.all([request('/api/library', jsonOptions(fromTabA, beforeTabs.revision)), request('/api/library', jsonOptions(fromTabB, beforeTabs.revision))]);
+    assert.deepEqual(tabResults.map(result => result.status).sort(), [200, 409], 'Only one concurrent stale revision may save');
+    assert(tabResults.find(result => result.status === 409).body.error.includes('cửa sổ khác'));
+    const afterTabs = (await request('/api/library')).body;
+    assert.notEqual(afterTabs.revision, beforeTabs.revision);
+    assert.equal((await request('/api/library', jsonOptions(library, beforeTabs.revision))).status, 409, 'Stale tab cannot overwrite the winning edit');
+    assert.deepEqual((await request('/api/library')).body, afterTabs);
+    assert.equal((await request('/api/library', jsonOptions(library))).status, 200);
+
+    const upload = (name, body = 'nội dung ôn tập', subjectId = 'software-testing') => request(`/api/files?subjectId=${encodeURIComponent(subjectId)}&name=${encodeURIComponent(name)}`, { method: 'POST', headers: { 'Content-Type': 'text/plain', Origin: origin }, body });
+    assert.equal((await upload('../escape.txt')).status, 422);
+    assert.equal((await upload('bad\\path.txt')).status, 422);
+    assert.equal((await upload('bad.html')).status, 415);
+    assert.equal((await upload('empty.txt', '')).status, 422);
+    assert.equal((await upload('notes.txt', 'abc', 'missing-subject')).status, 422);
+    assert.equal((await upload('notes.txt', 'abc', '')).status, 422);
+    const large = await request('/api/files?subjectId=software-testing&name=too-big.txt', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: Buffer.alloc(MAX_FILE + 1, 65) });
+    assert.equal(large.status, 413);
+    const [one, two] = await Promise.all([upload('Đề ôn tập.txt'), upload('Bài tập.csv', 'x,y\n1,2')]);
+    assert.equal(one.status, 201); assert.equal(two.status, 201);
+    const id = one.body.file.id;
+    assert.notEqual(id, two.body.file.id);
+    assert.equal((await request('/api/files')).body.files.length, 2);
+    assert.equal((await request('/api/files?subjectId=software-testing')).body.files.length, 2);
+    assert.equal((await request('/api/files?subjectId=missing')).body.files.length, 0);
+    const downloaded = await request('/api/files/' + id);
+    assert.equal(downloaded.status, 200); assert.equal(downloaded.body, 'nội dung ôn tập');
+    assert.equal(downloaded.response.headers.get('content-type'), 'application/octet-stream');
+    assert(downloaded.response.headers.get('content-disposition').startsWith('attachment;'));
+    assert.equal((await request('/api/files/' + id, { method: 'HEAD' })).body, '');
+    assert.equal((await request('/api/files/no-such-id')).status, 404);
+    assert.equal((await request('/api/files/' + id, { method: 'DELETE', headers: { Origin: 'https://evil.example' } })).status, 403);
+
+    const replacement = { version: 2, subjects: [{ id: 'math', name: 'Toán', code: 'MATH', description: '', chapters: [] }], questions: [], exams: [] };
+    assert.equal((await request('/api/library', jsonOptions(replacement))).status, 409, 'Cannot remove a subject with attached files');
+    assert.equal((await request('/api/files/' + id, { method: 'DELETE', headers: { Origin: origin } })).status, 200);
+    assert.equal((await request('/api/files/' + id)).status, 404);
+    assert.equal((await request('/api/files/' + id, { method: 'DELETE' })).status, 404);
+    assert.equal((await request('/api/files/' + two.body.file.id, { method: 'DELETE' })).status, 200);
+    assert.equal((await request('/api/library', jsonOptions(replacement))).status, 200);
+    assert.deepEqual(await fs.readdir(path.join(dataPath, 'uploads')), []);
+
+    await fs.writeFile(path.join(dataPath, 'library.json'), '{corrupt');
+    assert.equal((await request('/api/library')).status, 500);
+    assert.equal((await request('/api/library', jsonOptions(library))).status, 500, 'Never overwrite corrupt existing library silently');
+    assert.equal(await fs.readFile(path.join(dataPath, 'library.json'), 'utf8'), '{corrupt');
+    await fs.writeFile(path.join(dataPath, 'library.json'), 'null');
+    assert.equal((await request('/api/library')).status, 500, 'An existing JSON null file is corrupt, not an uninitialized library');
+    assert.equal((await request('/api/library', jsonOptions(library))).status, 500);
+    assert.equal(await fs.readFile(path.join(dataPath, 'library.json'), 'utf8'), 'null', 'Preserve existing invalid null library');
+    await fs.writeFile(path.join(dataPath, 'library.json'), JSON.stringify(library));
+    await fs.writeFile(path.join(dataPath, 'files.json'), '[{"id":"../escape"}]');
+    assert.equal((await request('/api/files')).status, 500);
+    assert.equal((await upload('safe.txt')).status, 500);
+    console.log('PASS server: static/HEAD/traversal, loopback Host and Origin protection, validated library persistence, optimistic revision conflicts, concurrent uploads, size/type/name/subject limits, exact download, deletion, subject/file integrity, corrupt/null-data preservation.');
+  } finally {
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+    const root = await fs.realpath(path.join(__dirname, 'output'));
+    const target = await fs.realpath(dataDir);
+    assert(target.startsWith(root + path.sep) && path.basename(target).startsWith('server-test-'));
+    await fs.rm(target, { recursive: true, force: true });
+  }
+})().catch(error => { console.error(error); process.exitCode = 1; });
