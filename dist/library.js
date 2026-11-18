@@ -54,7 +54,38 @@
     };
     validate(data); return data;
   }
-  const api = { createDefault, validate, clone };
+  function mergeBugReportWeek7(data, questions7) {
+    if (!object(data) || !Array.isArray(data.subjects) || !Array.isArray(questions7) || !questions7.length) return false;
+    const subject = data.subjects.find(s => s.id === 'software-testing');
+    if (!subject) return false;
+    let changed = false;
+    if (!subject.chapters.some(c => c.id === 7)) {
+      subject.chapters.push({ id: 7, title: 'Bug report & quản lý lỗi', detail: 'Lỗi, vòng đời defect, severity/priority, viết & review báo cáo lỗi', short: 'Bug report', color: 'blue' });
+      changed = true;
+    }
+    const existingIds = new Set(data.questions.map(q => q.id));
+    for (const q of questions7) {
+      if (!existingIds.has(q.id)) {
+        data.questions.push({ ...clone(q), subjectId: subject.id });
+        existingIds.add(q.id);
+        changed = true;
+      }
+    }
+    const ch7Count = data.questions.filter(q => q.subjectId === subject.id && q.chapter === 7).length;
+    const extraExams = [
+      { id: 'bug-report-exam-01', subjectId: subject.id, name: 'Đề ôn Bug Report · 20 câu', description: 'Đề luyện nhanh kiểm tra cá nhân Bài 7: Khái niệm, vòng đời, Severity/Priority & Checklist 8 điểm.', durationMinutes: 20, chapterCounts: [{ chapterId: 7, count: Math.min(20, ch7Count) }], seed: 20261118 },
+      { id: 'bug-report-exam-02', subjectId: subject.id, name: 'Đề tổng ôn Bug Report · 36 câu', description: 'Bao phủ toàn bộ 36 câu hỏi Tuần 7 (Slide Lesson 7 & ISTQB CTFL v4.0.1 mục 5.5).', durationMinutes: 35, chapterCounts: [{ chapterId: 7, count: ch7Count }], seed: 20261119 }
+    ];
+    for (const ex of extraExams) {
+      if (ch7Count > 0 && !data.exams.some(e => e.id === ex.id)) {
+        data.exams.push(ex);
+        changed = true;
+      }
+    }
+    if (changed) validate(data);
+    return changed;
+  }
+  const api = { createDefault, mergeBugReportWeek7, validate, clone };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.StudyLibrary = api;
 })(globalThis);

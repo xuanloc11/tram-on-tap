@@ -2,9 +2,12 @@
   'use strict';
   const E = globalThis.QuizEngine;
   const seedBank = [...(globalThis.QUESTION_PART_12 || []), ...(globalThis.QUESTION_PART_3 || []), ...(globalThis.QUESTION_PART_45 || [])];
+  const week7Bank = globalThis.QUESTION_PART_7 || [];
   const L = globalThis.StudyLibrary;
   const LIBRARY_KEY = 'tram-on-tap-library-v2';
+  const W07_APPLIED_KEY = 'tram-on-tap-w07-applied';
   let library = L.createDefault(seedBank, E.CHAPTERS), localMode = false, localRevision = null;
+  L.mergeBugReportWeek7(library, week7Bank);
   let bank = [], lookup = new Map();
   const app = document.getElementById('app');
   const dialog = document.getElementById('confirm-dialog');
@@ -14,7 +17,18 @@
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const btn = (action, text, cls = 'primary', attrs = '') => `<button class="btn ${cls}" data-action="${action}" ${attrs}>${text}</button>`;
   let state = { active: null, history: [], reviewId: null, subjectId: 'software-testing' }, route = 'home', review = null, reviewFilter = 'all', historyAll = false, confirmAction = null, storageWarning = false;
-  try { const savedLibrary = localStorage.getItem(LIBRARY_KEY); if (savedLibrary) { const parsed = JSON.parse(savedLibrary); L.validate(parsed); library = parsed; } } catch { storageWarning = true; }
+  try {
+    const savedLibrary = localStorage.getItem(LIBRARY_KEY);
+    if (savedLibrary) {
+      const parsed = JSON.parse(savedLibrary);
+      L.validate(parsed);
+      library = parsed;
+      if (!localStorage.getItem(W07_APPLIED_KEY) && L.mergeBugReportWeek7(library, week7Bank)) {
+        localStorage.setItem(LIBRARY_KEY, JSON.stringify(library));
+      }
+      localStorage.setItem(W07_APPLIED_KEY, '1');
+    }
+  } catch { storageWarning = true; }
   if (location.protocol !== 'file:') {
     try {
       const response = await fetch('/api/library', { cache: 'no-store', signal: AbortSignal.timeout(3000) });
@@ -23,7 +37,15 @@
         if (!response.ok) throw new Error('Không đọc được dữ liệu trên máy. Hãy kiểm tra tệp data/library.json hoặc khôi phục bản sao lưu.');
         const payload = await response.json();
         localRevision = payload.revision;
-        if (payload.library) { L.validate(payload.library); library = payload.library; }
+        if (payload.library) {
+          L.validate(payload.library);
+          library = payload.library;
+          if (!localStorage.getItem(W07_APPLIED_KEY) && L.mergeBugReportWeek7(library, week7Bank)) {
+            const updated = await fetch('/api/library', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ library, expectedRevision: localRevision }) });
+            if (updated.ok) localRevision = (await updated.json()).revision;
+          }
+          try { localStorage.setItem(W07_APPLIED_KEY, '1'); } catch {}
+        }
         else { const initialized = await fetch('/api/library', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ library, expectedRevision: localRevision }) }); if (!initialized.ok) throw new Error('Không khởi tạo được thư viện trên máy.'); localRevision = (await initialized.json()).revision; }
       }
     } catch (error) {
